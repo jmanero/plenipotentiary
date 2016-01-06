@@ -1,0 +1,54 @@
+#!/usr/bin/env node
+var Mocha = require('mocha');
+
+var CP = require('child_process');
+var FS = require('fs');
+var OS = require('os');
+var Path = require('path');
+
+
+require('colors');
+console.log('Logging CONSUL output in green'.green);
+
+CP.execSync('rm -rf data', {
+  cwd: Path.resolve(__dirname, '..')
+});
+
+/**
+ * Start up a consul agent in server mode for testing
+ */
+var consul = CP.spawn('bin/platform/' + OS.platform(), ['agent', '-config-file=conf/consul.json'], {
+  cwd: Path.resolve(__dirname, '..')
+});
+
+consul.stdout.setEncoding('utf8');
+consul.stderr.setEncoding('utf8');
+consul.stdout.on('data', function(data) {
+  process.stdout.write(data.green);
+  if (data.indexOf("agent: Synced service 'consul'") > -1) consul.emit('ready');
+});
+consul.stderr.on('data', function(data) {
+  process.stdout.write(data.green);
+});
+consul.on('exit', function() {
+  console.log('Consul shutdown complete'.green);
+});
+
+process.on('exit', function() {
+  consul.kill();
+});
+
+/**
+ * Run tests
+ */
+var tester = new Mocha();
+FS.readdirSync(Path.resolve(__dirname, '../test')).forEach(function(test) {
+  tester.addFile(Path.resolve(__dirname, '../test', test));
+});
+
+consul.on('ready', function() {
+  console.log('Consul successfuly started. Beginning tests'.magenta);
+  tester.run(function() {
+    consul.kill();
+  });
+});
